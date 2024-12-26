@@ -36,8 +36,7 @@ namespace project_cache.Controllers
         [HttpPost("create")]
         public async Task<ActionResult<AgendaResponseModel<List<AgendaDto>>>> CriarAgenda([FromBody] DoctorAgenda doctorAgenda)
         {
-            var validationResult = await _doctorAgendaValidator.ValidateAsync(doctorAgenda); // Validar a DoctorAgenda
-
+            var validationResult = await _doctorAgendaValidator.ValidateAsync(doctorAgenda);
             if (!validationResult.IsValid)
             {
                 return BadRequest(validationResult.Errors);
