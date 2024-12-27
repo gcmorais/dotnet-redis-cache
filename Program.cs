@@ -1,5 +1,6 @@
 using FluentValidation.AspNetCore;
 using Microsoft.EntityFrameworkCore;
+using project_cache.Caching;
 using project_cache.Data;
 using project_cache.Services.Agenda;
 using project_cache.Validators;
@@ -24,8 +25,15 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
 
-// Registro do serviço de Agenda
+// Registro de serviços
 builder.Services.AddScoped<IAgendaInterface, AgendaService>();
+builder.Services.AddScoped<ICachingService, CachingService>();
+
+// config Redis
+builder.Services.AddStackExchangeRedisCache(o => {
+    o.InstanceName = "instance";
+    o.Configuration = "localhost:6379";
+});
 
 // Configuração do DbContext (banco de dados SQL Server)
 builder.Services.AddDbContext<AppDbContext>(options =>

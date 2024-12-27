@@ -1,5 +1,7 @@
 ﻿using AutoMapper;
 using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
+using project_cache.Caching;
 using project_cache.Data;
 using project_cache.Dto.Agenda;
 using project_cache.Models;
@@ -10,19 +12,32 @@ namespace project_cache.Services.Agenda
     {
         private readonly AppDbContext _context;
         private readonly IMapper _mapper;
+        private readonly ICachingService _cache;
 
-        public AgendaService(AppDbContext context, IMapper mapper)
+        public AgendaService(ICachingService cache, AppDbContext context, IMapper mapper)
         {
+            _cache = cache;
             _context = context;
             _mapper = mapper;
         }
 
         public async Task<AgendaResponseModel<AgendaDto>> BuscarAgendaPorId(Guid id)
         {
-            AgendaResponseModel<AgendaDto> response = new();
+            var response = new AgendaResponseModel<AgendaDto>();
 
             try
             {
+                var agendaCache = await _cache.GetAsync(id.ToString());
+
+                if (!string.IsNullOrWhiteSpace(agendaCache))
+                {
+                    var cachedAgenda = JsonConvert.DeserializeObject<AgendaDto>(agendaCache);
+                    Console.WriteLine("Loaded from cache.");
+                    response.Medicos = cachedAgenda;
+                    response.Status = true;
+                    return response;
+                }
+
                 var agenda = await _context.Agenda.FirstOrDefaultAsync(a => a.Id == id);
 
                 if (agenda == null)
@@ -31,12 +46,14 @@ namespace project_cache.Services.Agenda
                     return response;
                 }
 
-                response.Medicos = _mapper.Map<AgendaDto>(agenda);
-                response.Status = true;
+                var agendaDto = _mapper.Map<AgendaDto>(agenda);
+                await _cache.SetAsync(id.ToString(), JsonConvert.SerializeObject(agendaDto));
 
+                response.Medicos = agendaDto;
+                response.Status = true;
                 return response;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 response.Status = false;
                 return response;
@@ -55,12 +72,16 @@ namespace project_cache.Services.Agenda
                 await _context.SaveChangesAsync();
 
                 var agendas = await _context.Agenda.Where(a => a.IsActive).ToListAsync();
-                response.Medicos = _mapper.Map<List<AgendaDto>>(agendas);
+                var agendaDtos = _mapper.Map<List<AgendaDto>>(agendas);
+
+                await _cache.SetAsync("AllAgendas", JsonConvert.SerializeObject(agendaDtos));
+
+                response.Medicos = agendaDtos;
                 response.Status = true;
 
                 return response;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 response.Status = false;
                 return response;
@@ -73,8 +94,7 @@ namespace project_cache.Services.Agenda
 
             try
             {
-                var agenda = await _context.Agenda
-                    .FirstOrDefaultAsync(a => a.Id == agendaDto.Id);
+                var agenda = await _context.Agenda.FirstOrDefaultAsync(a => a.Id == agendaDto.Id);
 
                 if (agenda == null)
                 {
@@ -88,15 +108,15 @@ namespace project_cache.Services.Agenda
 
                 await _context.SaveChangesAsync();
 
-                response.Medicos = await _context.Agenda
-                    .Select(a => new AgendaDto
-                    {
-                        Id = a.Id,
-                        Name = a.Name,
-                        Specialty = a.Specialty,
-                        Schedules = a.Schedules
-                    }).ToListAsync();
+                var updatedAgendaDto = _mapper.Map<AgendaDto>(agenda);
+                await _cache.SetAsync(agendaDto.Id.ToString(), JsonConvert.SerializeObject(updatedAgendaDto));
 
+                var agendas = await _context.Agenda.ToListAsync();
+                var agendaDtos = _mapper.Map<List<AgendaDto>>(agendas);
+
+                await _cache.SetAsync("AllAgendas", JsonConvert.SerializeObject(agendaDtos));
+
+                response.Medicos = agendaDtos;
                 response.Status = true;
                 return response;
             }
@@ -106,7 +126,6 @@ namespace project_cache.Services.Agenda
                 return response;
             }
         }
-
 
         public async Task<AgendaResponseModel<List<AgendaDto>>> ExcluirAgenda(Guid id)
         {
@@ -125,15 +144,14 @@ namespace project_cache.Services.Agenda
                 _context.Remove(agenda);
                 await _context.SaveChangesAsync();
 
-                response.Medicos = await _context.Agenda
-                    .Select(a => new AgendaDto
-                    {
-                        Id = a.Id,
-                        Name = a.Name,
-                        Specialty = a.Specialty,
-                        Schedules = a.Schedules
-                    }).ToListAsync();
+                await _cache.RemoveAsync(id.ToString());
 
+                var agendas = await _context.Agenda.ToListAsync();
+                var agendaDtos = _mapper.Map<List<AgendaDto>>(agendas);
+
+                await _cache.SetAsync("AllAgendas", JsonConvert.SerializeObject(agendaDtos));
+
+                response.Medicos = agendaDtos;
                 response.Status = true;
                 return response;
             }
@@ -150,13 +168,27 @@ namespace project_cache.Services.Agenda
 
             try
             {
-                var agendas = await _context.Agenda.ToListAsync();
-                response.Medicos = _mapper.Map<List<AgendaDto>>(agendas);
-                response.Status = true;
+                var agendasCache = await _cache.GetAsync("AllAgendas");
 
+                if (!string.IsNullOrWhiteSpace(agendasCache))
+                {
+                    var cachedAgendas = JsonConvert.DeserializeObject<List<AgendaDto>>(agendasCache);
+                    Console.WriteLine("Loaded all agendas from cache.");
+                    response.Medicos = cachedAgendas;
+                    response.Status = true;
+                    return response;
+                }
+
+                var agendas = await _context.Agenda.ToListAsync();
+                var agendaDtos = _mapper.Map<List<AgendaDto>>(agendas);
+
+                await _cache.SetAsync("AllAgendas", JsonConvert.SerializeObject(agendaDtos));
+
+                response.Medicos = agendaDtos;
+                response.Status = true;
                 return response;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 response.Status = false;
                 return response;
